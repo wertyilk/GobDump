@@ -231,12 +231,6 @@
                 "value": false,
                 "name": "Pilots",
                 "description": "DVB-S2 Pilots"
-            },
-            "output_file": {
-                "type": "string",
-                "value": "dvbs2_output",
-                "name": "Output File",
-                "description": "Output file name (without extension)"
             }
         },
         "work": {
@@ -250,12 +244,6 @@
             "ts": {
                 "module": "dvbs2_ts_extractor",
                 "parameters": {}
-            },
-            "file": {
-                "module": "file_output",
-                "parameters": {
-                    "extension": ".ts"
-                }
             }
         }
     }
