@@ -142,6 +142,12 @@
                 "name": "PLL BW",
                 "description": "DVB-S2 PLL Bandwidth"
             },
+            "pilots": { 
+                "type": "boolean",
+                "value": false,
+                "name": "Pilots",
+                "description": "DVB-S2 Pilots"
+            }, 
             /*"bb_size": {
                 "type": "int",
                 "value": 58192,
@@ -220,6 +226,12 @@
                 "name": "PLL BW",
                 "description": "DVB-S2 PLL Bandwidth"
             },
+            "pilots": {
+                "type": "boolean",
+                "value": false,
+                "name": "Pilots",
+                "description": "DVB-S2 Pilots"
+            },
             "output_file": {
                 "type": "string",
                 "value": "dvbs2_output",
@@ -247,5 +259,4 @@
             }
         }
     }
-}
 }

@@ -67,6 +67,13 @@ namespace dvbs2
         if (input_data_type == satdump::pipeline::DATA_FILE)
             data_in = std::ifstream(d_input_file, std::ios::binary);
 
+        if (output_data_type == satdump::pipeline::DATA_FILE)
+        {
+            d_output_file = d_output_file_hint + ".ts";
+            data_out = std::ofstream(d_output_file, std::ios::binary);
+            logger->info("Saving output to " + d_output_file);
+        }
+
         logger->info("Using input bbframes " + d_input_file);
 
         time_t lastTime = 0;

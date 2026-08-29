@@ -1,6 +1,8 @@
 #pragma once
 
 #include "pipeline/module.h"
+#include <ctime>
+#include <fstream>
 
 namespace satdump
 {
@@ -23,7 +25,8 @@ namespace satdump
                 void drawUI(bool window) override;
                 nlohmann::json getModuleStats() override;
 
-                std::string getID() override { return "file_output"; }
+                static std::string getID();
+                virtual std::string getIDM() { return getID(); }
 
                 static nlohmann::json getParams();
                 static std::shared_ptr<ProcessingModule> getInstance(std::string input_file, std::string output_file_hint, nlohmann::json parameters)

@@ -1,6 +1,8 @@
 #include "module_file_output.h"
+#include "imgui/imgui.h"
 #include "logger.h"
 #include "utils/file.h"
+#include <cmath>
 
 namespace satdump
 {
@@ -8,6 +10,8 @@ namespace satdump
     {
         namespace generic
         {
+            std::string FileOutputModule::getID() { return "file_output"; }
+
             FileOutputModule::FileOutputModule(std::string input_file, std::string output_file_hint, nlohmann::json parameters)
                 : ProcessingModule(input_file, output_file_hint, parameters)
             {
@@ -26,17 +30,34 @@ namespace satdump
                 }
                 progress = 0;
 
+                d_output_file = d_output_file_hint + file_ext;
+
+
+
+                // If the input is already the file we would write to, there is nothing
+                // to do: opening it for output would truncate our own input!
+                if (d_input_file == d_output_file)
+                {
+                    logger->info("Input is already the output file, nothing to do (" + d_output_file + ")");
+                    return;
+                }
+
                 if (output_data_type == DATA_FILE)
                 {
-                    data_out = std::ofstream(d_output_file_hint + file_ext, std::ios::binary);
+                    data_out = std::ofstream(d_output_file, std::ios::binary);
                     logger->info("Saving output to " + d_output_file_hint + file_ext);
                 }
 
-                d_output_file = d_output_file_hint + file_ext;
             }
 
             void FileOutputModule::process()
             {
+                if (d_input_file == d_output_file)
+                {
+                    progress = filesize;
+                    return;
+                }
+
                 uint8_t buffer[8192];
 
                 while (input_data_type == DATA_FILE ? !data_in.eof() : input_active.load())
