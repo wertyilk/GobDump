@@ -30,6 +30,7 @@
 #include "modules/products/module_products_processor.h"
 
 #include "modules/generic/module_soft2hard.h"
+#include "modules/generic/module_file_output.h"
 
 namespace satdump
 {
@@ -118,6 +119,7 @@ namespace satdump
 
             // Generic
             REGISTER_MODULE(generic::Soft2HardModule);
+            REGISTER_MODULE(generic::FileOutputModule);
 
             // WIP
             REGISTER_MODULE(demod::NdspDemodModule);

@@ -186,5 +186,66 @@
                 }
             }
         }
+    },
+    "dvbs2_test_file": {
+        "name": "DVB-S2 Test to File",
+        "live": [
+            1,
+            2,
+            3
+        ],
+        "frequencies": [],
+        "parameters": {
+            "symbolrate": {
+                "type": "int",
+                "value": 1e6,
+                "name": "Symbolrate",
+                "description": "DVB-S2 Symbolrate"
+            },
+            "modcod": {
+                "type": "int",
+                "value": 11,
+                "name": "MODCOD",
+                "description": "DVB-S2 Modcod"
+            },
+            "rrc_alpha": {
+                "type": "float",
+                "value": 0.25,
+                "name": "RRC Alpha",
+                "description": "RRC Alpha"
+            },
+            "pll_bw": {
+                "type": "float",
+                "value": 0.005,
+                "name": "PLL BW",
+                "description": "DVB-S2 PLL Bandwidth"
+            },
+            "output_file": {
+                "type": "string",
+                "value": "dvbs2_output",
+                "name": "Output File",
+                "description": "Output file name (without extension)"
+            }
+        },
+        "work": {
+            "baseband": {},
+            "bbframe": {
+                "module": "dvbs2_demod",
+                "parameters": {
+                    "freq_prop_factor": 0.01
+                }
+            },
+            "ts": {
+                "module": "dvbs2_ts_extractor",
+                "parameters": {}
+            },
+            "file": {
+                "module": "file_output",
+                "parameters": {
+                    "extension": ".ts"
+                }
+            }
+        }
     }
+}
 }
