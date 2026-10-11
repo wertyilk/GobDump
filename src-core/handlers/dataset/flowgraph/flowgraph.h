@@ -1,14 +1,15 @@
 #pragma once
 
-#include <vector>
-#include <string>
 #include "nlohmann/json.hpp"
+#include <exception>
+#include <string>
+#include <vector>
 
 //// TODOREWORK
-#include "logger.h"
+#include "core/style.h"
 #include "imgui/imgui.h"
 #include "imgui/imgui_stdlib.h"
-#include "core/style.h"
+#include "logger.h"
 
 namespace satdump
 {
@@ -22,7 +23,10 @@ namespace satdump
         struct InOutConfig
         {
             std::string name;
+            std::string type;
             std::shared_ptr<void> ptr = nullptr;
+
+            InOutConfig(std::string name, std::string type) : name(name), type(type) {}
         };
 
         std::vector<InOutConfig> inputs;
@@ -70,7 +74,13 @@ namespace satdump
     class Flowgraph
     {
     public:
-        std::map<std::string, std::function<std::shared_ptr<NodeInternal>()>> node_internal_registry;
+        struct NodeInternalReg
+        {
+            std::string menuname;
+            std::function<std::shared_ptr<NodeInternal>()> inst;
+        };
+        std::map<std::string, NodeInternalReg> node_internal_registry;
+        bool is_running = false;
 
     public:
         class Node
@@ -99,27 +109,19 @@ namespace satdump
             std::vector<InOut> node_io;
 
         public:
-            Node(Flowgraph *f, std::string id, std::shared_ptr<NodeInternal> i)
-                : id(f->getNewNodeID()), internal_id(id), title(i->title), internal(i)
+            Node(Flowgraph *f, std::string id, std::shared_ptr<NodeInternal> i) : id(f->getNewNodeID()), internal_id(id), title(i->title), internal(i)
             {
                 for (auto &io : internal->inputs)
                     node_io.push_back({f->getNewNodeIOID(&node_io), io.name, false});
                 for (auto &io : internal->outputs)
                     node_io.push_back({f->getNewNodeIOID(&node_io), io.name, true});
-                internal->add_io_callback = [this, f](NodeInternal::InOutConfig io, bool out)
-                {
-                    node_io.push_back({f->getNewNodeIOID(&node_io), io.name, out});
-                };
+                internal->add_io_callback = [this, f](NodeInternal::InOutConfig io, bool out) { node_io.push_back({f->getNewNodeIOID(&node_io), io.name, out}); };
             }
 
-            Node(Flowgraph *f, nlohmann::json j, std::shared_ptr<NodeInternal> i)
-                : id(j["id"]), internal_id(j["int_id"]), title(i->title), node_io(j["io"].get<std::vector<InOut>>()), internal(i)
+            Node(Flowgraph *f, nlohmann::json j, std::shared_ptr<NodeInternal> i) : id(j["id"]), internal_id(j["int_id"]), title(i->title), node_io(j["io"].get<std::vector<InOut>>()), internal(i)
             {
                 internal->from_json(j["int_cfg"]);
-                internal->add_io_callback = [this, f](NodeInternal::InOutConfig io, bool out)
-                {
-                    node_io.push_back({f->getNewNodeIOID(&node_io), io.name, out});
-                };
+                internal->add_io_callback = [this, f](NodeInternal::InOutConfig io, bool out) { node_io.push_back({f->getNewNodeIOID(&node_io), io.name, out}); };
 
                 pos_x = j.contains("pos_x") ? j["pos_x"].get<float>() : 0;
                 pos_y = j.contains("pos_y") ? j["pos_y"].get<float>() : 0;
@@ -184,13 +186,60 @@ namespace satdump
 
             for (auto &n : j["nodes"].items())
             {
-                auto i = node_internal_registry[n.value()["int_id"]]();
-                nodes.push_back(std::make_shared<Node>(this, n.value(), i));
+                try
+                {
+                    auto i = node_internal_registry[n.value()["int_id"]].inst();
+                    nodes.push_back(std::make_shared<Node>(this, n.value(), i));
+                }
+                catch (std::exception &e)
+                {
+                    logger->error("Error adding node : %s", n.value().dump().c_str());
+                }
             }
             links = j["links"];
         }
 
+        bool isRunning() { return is_running; }
+
+        std::mutex flow_mtx;
+
+    private:
+        /**
+         * @brief Render right-click block list menu.
+         * @param opt Node list to draw (as it can be recursive!)
+         * @param cats categories of block (eg, Filters/LPF)
+         * @param pos position of category (at most cats.size() - 1)
+         * at current recursive depth
+         */
+        void renderAddMenu(std::pair<const std::string, NodeInternalReg> &opt, std::vector<std::string> cats, int pos);
+
+    private:
+        /**
+         * @brief Helper struct to build a TreeNode menu for node lists
+         * @param cats sub-categories
+         * @param sub the actual nodes
+         */
+        struct CatT
+        {
+            std::map<std::string, CatT> cats;
+            std::map<std::string, NodeInternalReg> sub;
+        };
+
+        /**
+         * @brief Render a CatT and sub-elements as a TreeNode
+         * @param cats CatT to start with
+         * @param searching must be true if search is in use
+         */
+        void renderCatT(CatT &cats, bool searching);
+
+    public:
+        /**
+         * @brief Render block list menu (right sidebar version).
+         * @param search string to filter the list by
+         */
+        void renderAddMenuList(std::string search);
+
     public:
         void run();
     };
-}
+} // namespace satdump

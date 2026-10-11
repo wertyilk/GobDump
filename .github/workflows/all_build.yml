@@ -98,21 +98,12 @@ jobs:
         steps:
             - uses: actions/checkout@v4
 
-            # Cache the vcpkg tree metadata (including the .vcpkg-root marker,
-            # scripts/ and triplets/) alongside installed/, since on cache hits
-            # Configure-vcpkg.ps1 is skipped and vcpkg is never cloned. Without
-            # the marker the toolchain fails with "Could not find .vcpkg-root".
             - name: Cache dependencies
               uses: actions/cache@v4
               id: win-deps-x64
               with:
-                  path: |
-                      vcpkg/installed
-                      vcpkg/scripts
-                      vcpkg/triplets
-                      vcpkg/triplets_community
-                      vcpkg/.vcpkg-root
-                  key: win-deps-x64-v2-${{ hashFiles('windows/Configure-vcpkg.ps1') }}
+                  path: windows/deps
+                  key: win-deps-x64-${{ hashFiles('windows/build_deps.ps1') }}
 
             - name: Set up Python 3.13
               if: steps.win-deps-x64.outputs.cache-hit != 'true'
@@ -122,30 +113,18 @@ jobs:
 
             - name: Install mako
               if: steps.win-deps-x64.outputs.cache-hit != 'true'
-              run: pip install mako
+              run: python -m pip install mako
 
-            - name: Add msbuild to PATH
-              if: steps.win-deps-x64.outputs.cache-hit != 'true'
-              uses: microsoft/setup-msbuild@v2
+            - name: Set up MSVC (x64)
+              uses: ilammy/msvc-dev-cmd@v1
+              with:
+                  arch: x64
 
-            - name: Configure vcpkg
+            - name: Build dependencies
               if: steps.win-deps-x64.outputs.cache-hit != 'true'
+              working-directory: ${{github.workspace}}/windows
               shell: powershell
-              run: ${{github.workspace}}\windows\Configure-vcpkg.ps1 -platform x64-windows
-
-            - name: Clean up vcpkg
-              if: steps.win-deps-x64.outputs.cache-hit != 'true'
-              run: rm -recurse -force $Env:GITHUB_WORKSPACE/vcpkg/packages, $Env:GITHUB_WORKSPACE/vcpkg/downloads, $Env:GITHUB_WORKSPACE/vcpkg/buildtrees
-
-# I FUCKING HATE AARONIA
-#            - name: Download Aaronia RTSA API
-#              if: steps.win-deps-x64.outputs.cache-hit != 'true'
-#              shell: powershell
-#              run: Invoke-WebRequest -Uri "https://www.satdump.org/Aaronia_RTSA_Suite_PRO_2.2.0.12821_Setup_64bit.exe" -OutFile $Env:GITHUB_WORKSPACE/vcpkg/rtsa.exe
-#
-#            - name: Install Aaronia RTSA API
-#              shell: cmd
-#              run: start /wait vcpkg\rtsa.exe /q2 /install
+              run: ./build_deps.ps1
 
             - name: Add support to NSIS for long PATHs
               shell: powershell
@@ -171,18 +150,23 @@ jobs:
                   restore-keys: win-sccache-x64-
 
             - name: Configure CMake
-              working-directory: ${{runner.workspace}}/build
-              run: cmake -DVCPKG_TARGET_TRIPLET="x64-windows" -DPLUGIN_AARONIA_SDR_SUPPORT=ON -DBUILD_MSVC=ON -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_TOOLCHAIN_FILE="${{github.workspace}}\vcpkg\scripts\buildsystems\vcpkg.cmake" "$Env:GITHUB_WORKSPACE"
+              run: >
+                  cmake -S "${{github.workspace}}" -B ${{runner.workspace}}/build -G Ninja
+                  -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+                  -DCMAKE_FIND_ROOT_PATH="${{github.workspace}}/windows/deps/output"
+                  -DCMAKE_INSTALL_PREFIX="${{github.workspace}}/windows/deps/output"
+                  -DPLUGINS_ALL=ON
+                  -DPLUGIN_AARONIA_SDR_SUPPORT=ON
+                  -DBUILD_MSVC=ON
+                  -DCMAKE_C_COMPILER_LAUNCHER=sccache
+                  -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
             - name: Build
-              working-directory: ${{runner.workspace}}/build
-              shell: bash
-              run: cmake --build . --config $BUILD_TYPE
+              run: cmake --build ${{runner.workspace}}/build
 
             - name: Build Installer
               working-directory: ${{runner.workspace}}/build
-              shell: bash
-              run: cpack -C $BUILD_TYPE
+              run: cpack -C ${{env.BUILD_TYPE}}
 
             - name: Upload Installer
               uses: actions/upload-artifact@v4
@@ -190,18 +174,16 @@ jobs:
                   name: GobDump-Windows_x64_Installer
                   path: ${{runner.workspace}}/build/GobDump-*.exe
 
-            - name: Add dumpbin to PATH
-              run: echo "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\$((Get-ChildItem -Path "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC" | Sort-Object Name -Descending | Select-Object -First 1).Name)\bin\Hostx64\x64" >> $env:GITHUB_PATH
-
             - name: Build Portable
+              working-directory: ${{runner.workspace}}/build
               shell: powershell
-              run: ${{github.workspace}}\windows\Finish-Release.ps1 -platform x64-windows -BuildPath ${{runner.workspace}}\build
+              run: ${{github.workspace}}\windows\make_portable.ps1 -source_path "${{github.workspace}}"
 
             - name: Upload Portable
               uses: actions/upload-artifact@v4
               with:
                   name: GobDump-Windows_x64_Portable
-                  path: ${{runner.workspace}}/build/Release/*
+                  path: ${{runner.workspace}}/build/portable
 
     build_windows_arm64:
         runs-on: windows-2022
@@ -213,21 +195,12 @@ jobs:
         steps:
             - uses: actions/checkout@v4
 
-            # Cache the vcpkg tree metadata (including the .vcpkg-root marker,
-            # scripts/ and triplets/) alongside installed/, since on cache hits
-            # Configure-vcpkg.ps1 is skipped and vcpkg is never cloned. Without
-            # the marker the toolchain fails with "Could not find .vcpkg-root".
             - name: Cache dependencies
               uses: actions/cache@v4
               id: win-deps-arm64
               with:
-                  path: |
-                      vcpkg/installed
-                      vcpkg/scripts
-                      vcpkg/triplets
-                      vcpkg/triplets_community
-                      vcpkg/.vcpkg-root
-                  key: win-deps-arm64-v2-${{ hashFiles('windows/Configure-vcpkg.ps1') }}
+                  path: windows/deps
+                  key: win-deps-arm64-${{ hashFiles('windows/build_deps.ps1') }}
 
             - name: Set up Python 3.13
               if: steps.win-deps-arm64.outputs.cache-hit != 'true'
@@ -237,20 +210,18 @@ jobs:
 
             - name: Install mako
               if: steps.win-deps-arm64.outputs.cache-hit != 'true'
-              run: pip install mako
+              run: python -m pip install mako
 
-            - name: Add msbuild to PATH
-              if: steps.win-deps-arm64.outputs.cache-hit != 'true'
-              uses: microsoft/setup-msbuild@v2
+            - name: Set up MSVC (ARM64 cross)
+              uses: ilammy/msvc-dev-cmd@v1
+              with:
+                  arch: amd64_arm64
 
-            - name: Configure vcpkg
+            - name: Build dependencies
               if: steps.win-deps-arm64.outputs.cache-hit != 'true'
+              working-directory: ${{github.workspace}}/windows
               shell: powershell
-              run: ${{github.workspace}}\windows\Configure-vcpkg.ps1 -platform arm64-windows
-
-            - name: Clean up vcpkg
-              if: steps.win-deps-arm64.outputs.cache-hit != 'true'
-              run: rm -recurse -force $Env:GITHUB_WORKSPACE/vcpkg/packages, $Env:GITHUB_WORKSPACE/vcpkg/downloads, $Env:GITHUB_WORKSPACE/vcpkg/buildtrees
+              run: ./build_deps.ps1 -is_cross 1 -is_arm 1
 
             - name: Add support to NSIS for long PATHs
               shell: powershell
@@ -276,18 +247,26 @@ jobs:
                   restore-keys: win-sccache-arm64-
 
             - name: Configure CMake
-              working-directory: ${{runner.workspace}}/build
-              run: cmake -A ARM64 -DVCPKG_TARGET_TRIPLET="arm64-windows" -DVCPKG_HOST_TRIPLET="x64-windows" -DVCPKG_USE_HOST_TOOLS=ON -DCMAKE_SYSTEM_VERSION="10.0.22621.0" -DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_PROCESSOR=ARM64 -DCMAKE_CROSSCOMPILING=ON -DPLUGIN_LIMESDR_SDR_SUPPORT=OFF -DBUILD_MSVC=ON -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_TOOLCHAIN_FILE="${{github.workspace}}\vcpkg\scripts\buildsystems\vcpkg.cmake" "$Env:GITHUB_WORKSPACE"
+              run: >
+                  cmake -S "${{github.workspace}}" -B ${{runner.workspace}}/build -G Ninja
+                  -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+                  -DCMAKE_SYSTEM_NAME=Windows
+                  -DCMAKE_SYSTEM_PROCESSOR=ARM64
+                  -DCMAKE_CROSSCOMPILING=ON
+                  -DCMAKE_FIND_ROOT_PATH="${{github.workspace}}/windows/deps/output"
+                  -DCMAKE_INSTALL_PREFIX="${{github.workspace}}/windows/deps/output"
+                  -DPLUGINS_ALL=ON
+                  -DPLUGIN_LIMESDR_SDR_SUPPORT=OFF
+                  -DBUILD_MSVC=ON
+                  -DCMAKE_C_COMPILER_LAUNCHER=sccache
+                  -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
             - name: Build
-              working-directory: ${{runner.workspace}}/build
-              shell: bash
-              run: cmake --build . --config $BUILD_TYPE
+              run: cmake --build ${{runner.workspace}}/build
 
             - name: Build Installer
               working-directory: ${{runner.workspace}}/build
-              shell: bash
-              run: cpack -C $BUILD_TYPE
+              run: cpack -C ${{env.BUILD_TYPE}}
 
             - name: Upload Installer
               uses: actions/upload-artifact@v4
@@ -295,18 +274,16 @@ jobs:
                   name: GobDump-Windows_arm64_Installer
                   path: ${{runner.workspace}}/build/GobDump-*.exe
 
-            - name: Add dumpbin to PATH
-              run: echo "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\$((Get-ChildItem -Path "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC" | Sort-Object Name -Descending | Select-Object -First 1).Name)\bin\Hostx64\x64" >> $env:GITHUB_PATH
-
             - name: Build Portable
+              working-directory: ${{runner.workspace}}/build
               shell: powershell
-              run: ${{github.workspace}}\windows\Finish-Release.ps1 -platform arm64-windows -BuildPath ${{runner.workspace}}\build
+              run: ${{github.workspace}}\windows\make_portable.ps1 -source_path "${{github.workspace}}"
 
             - name: Upload Portable
               uses: actions/upload-artifact@v4
               with:
                   name: GobDump-Windows_arm64_Portable
-                  path: ${{runner.workspace}}/build/Release/*
+                  path: ${{runner.workspace}}/build/portable
 
     build_android:
         runs-on: ubuntu-latest
@@ -324,6 +301,8 @@ jobs:
 
             - name: Set up Android SDK
               uses: android-actions/setup-android@v3
+              with:
+                  packages: platforms;android-34 build-tools;30.0.3 ndk;25.2.9519653 cmake;3.22.1
 
             - name: Install NDK, platform, and CMake
               shell: bash
@@ -364,6 +343,7 @@ jobs:
                   ./gradlew assembleRelease
 
             - name: Sign APK
+              if: ${{ github.event_name != 'pull_request' }}
               shell: bash
               run: |
                   APK=$GITHUB_WORKSPACE/android/app/build/outputs/apk/release/app-release-unsigned.apk
@@ -381,7 +361,7 @@ jobs:
               uses: actions/upload-artifact@v4
               with:
                   name: GobDump-release.apk
-                  path: ${{github.workspace}}/android/app/build/outputs/apk/release/app-release-signed.apk
+                  path: ${{ github.event_name != 'pull_request' && 'android/app/build/outputs/apk/release/app-release-signed.apk' || 'android/app/build/outputs/apk/release/app-release-unsigned.apk' }}
 
     build_ubuntu_2204:
         # The CMake configure and build commands are platform agnostic and should work equally
@@ -429,6 +409,24 @@ jobs:
               with:
                   name: GobDump-Ubuntu-22.04
                   path: ${{runner.workspace}}/build/*.deb
+
+            # AppImage packaging (folded back in from upstream/master)
+            - name: Setup pkg2appimage
+              working-directory: ${{runner.workspace}}/build
+              shell: bash
+              # Execute the build.  You can specify a specific target with "--target <NAME>"
+              run:  wget https://raw.githubusercontent.com/probonopd/AppImages/master/pkg2appimage && chmod +x pkg2appimage && sudo apt install -y imagemagick desktop-file-utils libfuse2
+
+            - name: Make AppImage
+              working-directory: ${{runner.workspace}}/build
+              shell: bash
+              run: cp *.deb gobdump.deb && cp $GITHUB_WORKSPACE/SatDump.yml . && mkdir -p GobDump && mv gobdump.deb GobDump/ && ./pkg2appimage SatDump.yml
+
+            - name: Upload AppImage
+              uses: actions/upload-artifact@v4
+              with:
+                  name: GobDump-AppImage
+                  path: ${{runner.workspace}}/build/out/*.AppImage
 
     build_ubuntu_2404:
         # The CMake configure and build commands are platform agnostic and should work equally
@@ -688,7 +686,7 @@ jobs:
               run: sudo apt install -y unzip
 
             - name: Copy files
-              run: mkdir gobdump_out && cp GobDump-Ubuntu-22.04/gobdump*.deb gobdump_out/gobdump_ubuntu_22.04_amd64.deb && cp GobDump-Ubuntu-24.04/gobdump*.deb gobdump_out/gobdump_ubuntu_24.04_amd64.deb && cp GobDump-macOS-Intel/GobDump-macOS-Intel.dmg gobdump_out/GobDump-macOS-Intel.dmg && cp GobDump-macOS-Silicon/GobDump-macOS-Silicon.dmg gobdump_out/GobDump-macOS-Silicon.dmg && (cd GobDump-Windows_x64_Portable && zip -r ../gobdump_out/GobDump-Windows_x64_Portable.zip *) && cp GobDump-Windows_x64_Installer/GobDump-*.exe gobdump_out/GobDump-Windows_x64_Installer.exe && cp GobDump-Pi64-Latest/gobdump*.deb gobdump_out/gobdump_rpi64_latest_arm64.deb && (cd GobDump-Windows_arm64_Portable && zip -r ../gobdump_out/GobDump-Windows_arm64_Portable.zip *) && cp GobDump-Windows_arm64_Installer/GobDump-*.exe gobdump_out/GobDump-Windows_arm64_Installer.exe && cp GobDump-release.apk/app-release-signed.apk gobdump_out/GobDump-Android.apk
+              run: mkdir gobdump_out && cp GobDump-Ubuntu-22.04/gobdump*.deb gobdump_out/gobdump_ubuntu_22.04_amd64.deb && cp GobDump-Ubuntu-24.04/gobdump*.deb gobdump_out/gobdump_ubuntu_24.04_amd64.deb && cp GobDump-macOS-Intel/GobDump-macOS-Intel.dmg gobdump_out/GobDump-macOS-Intel.dmg && cp GobDump-macOS-Silicon/GobDump-macOS-Silicon.dmg gobdump_out/GobDump-macOS-Silicon.dmg && (cd GobDump-Windows_x64_Portable && zip -r ../gobdump_out/GobDump-Windows_x64_Portable.zip *) && cp GobDump-Windows_x64_Installer/GobDump-*.exe gobdump_out/GobDump-Windows_x64_Installer.exe && cp GobDump-Pi64-Latest/gobdump*.deb gobdump_out/gobdump_rpi64_latest_arm64.deb && (cd GobDump-Windows_arm64_Portable && zip -r ../gobdump_out/GobDump-Windows_arm64_Portable.zip *) && cp GobDump-Windows_arm64_Installer/GobDump-*.exe gobdump_out/GobDump-Windows_arm64_Installer.exe && cp GobDump-release.apk/app-release-signed.apk gobdump_out/GobDump-Android.apk && cp GobDump-AppImage/*.AppImage gobdump_out/GobDump.AppImage
 
             - name: Update Nightly
               run: gh release upload nightly gobdump_out/* -R ${{github.repository}} --clobber

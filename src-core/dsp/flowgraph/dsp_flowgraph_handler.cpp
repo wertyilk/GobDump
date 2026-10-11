@@ -1,12 +1,15 @@
 #include "dsp_flowgraph_handler.h"
 #include "common/widgets/menuitem_tooltip.h"
 #include "core/backend.h"
+#include "core/style.h"
 #include "dsp/flowgraph/dsp_flowgraph_register.h"
+#include "i18n.h"
 #include "imgui/imgui.h"
 #include "imgui/imgui_flags.h"
 #include "imgui/imnodes/imnodes.h"
 #include "logger.h"
 #include "nlohmann/json_utils.h"
+#include "utils/time.h"
 #include <complex.h>
 
 namespace satdump
@@ -103,7 +106,25 @@ namespace satdump
                         flow_thread.join();
                     auto fun = [&]() { flowgraph.run(); };
                     flow_thread = std::thread(fun);
+                    start_time = getTime();
                 }
+            }
+
+            // Surface why a flowgraph could not start/stay running, so a failed
+            // start (e.g. missing file source) is not silent.
+            if (!running && flowgraph.hasError())
+            {
+                ImGui::SameLine();
+                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImVec4(1.0f, 0.3f, 0.3f, 1.0f)));
+                ImGui::TextUnformatted("Flowgraph error : ");
+                ImGui::PopStyleColor();
+                ImGui::SameLine();
+                if (ImGui::BeginItemTooltip())
+                {
+                    ImGui::TextUnformatted(flowgraph.getLastError().c_str());
+                    ImGui::EndTooltip();
+                }
+                ImGui::TextUnformatted(flowgraph.getLastError().c_str());
             }
 
             bool is_save_as = false;
@@ -142,12 +163,18 @@ namespace satdump
                 };
                 tq.push(fun);
             }
+
+            if (flowgraph.isRunning())
+                ImGui::Text(_("Runtime : %.2f s"), getTime() - start_time);
         }
 
         void DSPFlowGraphHandler::drawContents(ImVec2 win_size)
         {
             if (imnode_ctx == nullptr)
+            {
                 imnode_ctx = ImNodes::CreateContext();
+                imnode_ctx->Style = style::theme.imnodes_style;
+            }
             ImNodes::SetCurrentContext(imnode_ctx);
 
             ctx.config().color = ImGui::GetColorU32(ImGuiCol_WindowBg);

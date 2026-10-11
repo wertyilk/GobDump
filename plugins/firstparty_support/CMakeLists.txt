@@ -1,12 +1,18 @@
 cmake_minimum_required(VERSION 3.12)
 project(firstparty_support)
 
-if(NOT ANDROID)
+if(MSVC)
+  set(HDF5_FOUND true)
+  set(HDF5HL_FOUND true)
+  set(HDF5_LIBRARIES libhdf5 libhdf5_hl libhdf5_cpp zlib)
+elseif(NOT ANDROID)
   find_package(PkgConfig)
   pkg_check_modules(HDF5 hdf5)
+  pkg_check_modules(HDF5HL hdf5_hl hdf5_cpp)
+  pkg_check_modules(HDF5CPP hdf5_cpp)
 endif()
 
-if(${HDF5_FOUND})
+if(HDF5_FOUND)
 
   # Core Plugin
   file(
@@ -36,9 +42,14 @@ if(${HDF5_FOUND})
   target_include_directories(firstparty_support
                              PUBLIC ${HDF5_INCLUDE_DIRS})
   target_link_directories(firstparty_support PUBLIC ${HDF5_LIBRARY_DIRS})
-  target_link_libraries(firstparty_support PUBLIC hdf5 hdf5_hl hdf5_cpp xrit_support)
 
-  if(MSVC OR BUILD_MSVC)
+  if(HDF5HL_FOUND OR HDF5CPP)
+    target_link_libraries(firstparty_support PUBLIC ${HDF5_LIBRARIES} ${HDF5HL_LIBRARIES} ${HDF5CPP_LIBRARIES} xrit_support)
+  else()
+    target_link_libraries(firstparty_support PUBLIC hdf5 hdf5_hl hdf5_cpp xrit_support)
+  endif()
+
+  if(MSVC)
     install(
       TARGETS firstparty_support
       DESTINATION ${CMAKE_INSTALL_LIBDIR}/gobdump/plugins
@@ -55,7 +66,7 @@ if(${HDF5_FOUND})
     target_link_libraries(firstparty_loader_support
                           PUBLIC firstparty_support gobdump_interface)
 
-    if(MSVC OR BUILD_MSVC)
+    if(MSVC)
       install(
         TARGETS firstparty_loader_support
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/gobdump/plugins
