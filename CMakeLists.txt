@@ -64,6 +64,17 @@ if(UNIX)
     endif(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
 endif()
 
+# $ORIGIN RUNPATH so installed binaries/plugins find the core lib under any prefix.
+if(UNIX AND NOT APPLE AND NOT ANDROID)
+    set(CMAKE_INSTALL_RPATH
+        "$ORIGIN"
+        "$ORIGIN/.."
+        "$ORIGIN/../.."
+        "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}"
+        "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}/gobdump"
+    )
+endif()
+
 if(APPLE)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
 
@@ -232,10 +243,11 @@ set(GOBDUMP_VERSION_TYPE "alpha")
 
 # Check if the current commit has a tag
 execute_process(
-    COMMAND git name-rev --name-only --tags HEAD
+    COMMAND git describe --tags --exact-match HEAD
     WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
     OUTPUT_VARIABLE GIT_HAS_TAG
     OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
 )
 
 # Get the current branch
@@ -254,8 +266,13 @@ execute_process(
     OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
+# GitHub Actions tag builds can have a shallow checkout without the tag ref.
+if(GIT_HAS_TAG STREQUAL "" AND "$ENV{GITHUB_REF_TYPE}" STREQUAL "tag")
+    set(GIT_HAS_TAG "$ENV{GITHUB_REF_NAME}")
+endif()
+
 # Set version
-if(GIT_HAS_TAG STREQUAL "undefined" OR GIT_HAS_TAG STREQUAL "nightly")
+if(GIT_HAS_TAG STREQUAL "undefined" OR GIT_HAS_TAG STREQUAL "nightly" OR GIT_HAS_TAG STREQUAL "")
     message("-- Commit has no tag/nightly tag (${GIT_HAS_TAG}). Assume dev build")
     if(NOT GOBDUMP_VERSION_TYPE STREQUAL "")
         set(GOBDUMP_VERSION "${PROJECT_VERSION}-${GOBDUMP_VERSION_TYPE}-${GIT_HASH}")
@@ -264,11 +281,10 @@ if(GIT_HAS_TAG STREQUAL "undefined" OR GIT_HAS_TAG STREQUAL "nightly")
     endif()
 else()
     message("-- Commit has tag (${GIT_HAS_TAG}). Assume release build")
-    if(NOT GOBDUMP_VERSION_TYPE STREQUAL "")
-        set(GOBDUMP_VERSION "${PROJECT_VERSION}")
-    else()
-        set(GOBDUMP_VERSION "${PROJECT_VERSION}-${GOBDUMP_VERSION_TYPE}")
-    endif()
+    # Use the actual tag for release builds instead of the development PROJECT_VERSION.
+    set(GOBDUMP_VERSION "${GIT_HAS_TAG}")
+    string(REGEX REPLACE "^tags/" "" GOBDUMP_VERSION "${GOBDUMP_VERSION}")
+    string(REGEX REPLACE "^v" "" GOBDUMP_VERSION "${GOBDUMP_VERSION}")
 endif()
 
 # Set branch
@@ -393,6 +409,8 @@ if((NOT ANDROID) AND ENABLE_INSTALL)
         install(DIRECTORY ${CMAKE_SOURCE_DIR}/resources DESTINATION share/gobdump)
         install(FILES ${CMAKE_SOURCE_DIR}/gobdump_cfg.json DESTINATION share/gobdump)
         install(FILES ${CMAKE_SOURCE_DIR}/icon.png DESTINATION share/gobdump)
+        # Square app icon for the desktop icon theme / AppImage (.DirIcon).
+        install(FILES ${CMAKE_SOURCE_DIR}/gobdump.png DESTINATION share/icons/hicolor/256x256/apps)
     endif()
     configure_file(${CMAKE_SOURCE_DIR}/satdump.desktop ${CMAKE_CURRENT_BINARY_DIR}/gobdump.desktop @ONLY)
 
@@ -415,7 +433,7 @@ if((NOT ANDROID) AND ENABLE_INSTALL)
     set(CPACK_PACKAGE_NAME ${PROJECT_NAME} CACHE STRING "gobdump-${PROJECT_VERSION}")
     set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "A satellite data processing software" CACHE STRING "")
     set(CPACK_PACKAGE_VENDOR "GobDump")
-    set(CPACK_PACKAGE_CONTACT "MrTalon63")
+    set(CPACK_PACKAGE_CONTACT "MTalon63")
 
     set(CPACK_DEBIAN_PACKAGE_DEPENDS "libfftw3-bin, libvolk-bin | libvolk2-bin, libpng16-16, libnng1, librtlsdr0 | librtlsdr2, libhackrf0, libairspy0, libairspyhf1, libglfw3 | libglfw3-wayland, libzstd1, libjemalloc2 | libjemalloc1, libportaudiocpp0, libhdf5-hl-100t64 | libhdf5-hl-100 | libhdf5-103 | libhdf5-100 | libhdf5-310, libdbus-1-dev, libsqlite3-0, libxrandr2, libuhd4.1.0 | libuhd4.6.0 | libuhd4.8.0 | libuhd4.9.0")
     set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "libomp5, ocl-icd-libopencl1, intel-opencl-icd, mesa-opencl-icd")
@@ -511,8 +529,7 @@ if((CMAKE_BUILD_TYPE MATCHES "^[Rr]elease") AND BUILD_DOCS)
                             src-core/dsp \
                             src-core/image \
                             src-core/utils \
-                            docs/pages \
-                            docs/res \
+                            docs \
                             plugins/xrit_support/xrit")
         set(DOXYGEN_FILES  "${DOXYGEN_FILES} \
                             plugins/fengyun2_support/fengyun2/svissr")
